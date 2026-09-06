@@ -199,11 +199,19 @@ void ls() {
 int importRelation(char *fileName) {
 
 	FILE *file = fopen(fileName, "r");
+	if (!file) {
+		cout << "Failed to open " << fileName << " for reading\n";
+		return FAILURE;
+	}
 
 	/*
 	 *  GET ATTRIBUTE NAMES FROM FIRST LINE OF FILE
 	 */
 	char *firstLine = (char *) malloc(sizeof(char));
+	if (!firstLine) {
+		fclose(file);
+		return FAILURE;
+	}
 	int numOfCharactersInLine = 1;
 	int currentCharacter, previousCharacter;
 	int numOfAttributes = 1;
@@ -220,21 +228,31 @@ int importRelation(char *fileName) {
 			numOfAttributes++;
 			if (previousCharacter == currentCharacter) {
 				cout << "Null values are not allowed in attribute names\n";
+				free(firstLine);
+				fclose(file);
 				return FAILURE;
 			}
 		}
 		firstLine[numOfCharactersInLine - 1] = currentCharacter;
 		numOfCharactersInLine++;
 		firstLine = (char *) realloc(firstLine, (numOfCharactersInLine) * sizeof(char));
+		if (!firstLine) {
+			fclose(file);
+			return FAILURE;
+		}
 		previousCharacter = currentCharacter;
 	}
 
 	if (previousCharacter == ',') {
 		cout << "Null values are not allowed in attribute names\n";
+		free(firstLine);
+		fclose(file);
 		return FAILURE;
 	}
 
     if (numOfAttributes > 125) {
+		free(firstLine);
+		fclose(file);
         return E_MAXATTRS;
     }
 
@@ -248,6 +266,8 @@ int importRelation(char *fileName) {
 		       (attributeIndexIterator < ATTR_SIZE - 1)) {
 			if (checkIfInvalidCharacter(firstLine[currentCharIndexInLine])) {
 				cout << "Invalid character : '" << firstLine[currentCharIndexInLine] << "' in attribute name\n";
+				free(firstLine);
+				fclose(file);
 				return FAILURE;
 			}
 			attributeNames[attrOffsetIterator][attributeIndexIterator++] = firstLine[currentCharIndexInLine++];
@@ -261,11 +281,16 @@ int importRelation(char *fileName) {
 		currentCharIndexInLine++;
 	}
 	currentCharIndexInLine = 0;
+	free(firstLine);
 
 	/*
 	 *  INFER ATTRIBUTE TYPES FROM SECOND LINE OF FILE
 	 */
 	char *secondLine = (char *) malloc(sizeof(char));
+	if (!secondLine) {
+		fclose(file);
+		return FAILURE;
+	}
 	numOfCharactersInLine = 1;
 	while ((currentCharacter = fgetc(file)) != '\n') {
 		if (currentCharacter == EOF)
@@ -273,6 +298,10 @@ int importRelation(char *fileName) {
 		secondLine[numOfCharactersInLine - 1] = currentCharacter;
 		numOfCharactersInLine++;
 		secondLine = (char *) realloc(secondLine, (numOfCharactersInLine) * sizeof(char));
+		if (!secondLine) {
+			fclose(file);
+			return FAILURE;
+		}
 	}
 	secondLine[numOfCharactersInLine - 1] = '\0';
 	currentCharIndexInLine = 0;
@@ -291,17 +320,22 @@ int importRelation(char *fileName) {
 		attrOffsetIterator++;
 		currentCharIndexInLine++;
 	}
+	free(secondLine);
 
 	// EXTRACT RELATION NAME FROM FILE PATH
 	currentCharIndexInLine = 0;
 	char relationName[ATTR_SIZE];
 	int fileNameIterator = strlen(fileName) - 1;
-	while (fileName[fileNameIterator] != '.') {
+	while (fileNameIterator >= 0 && fileName[fileNameIterator] != '.') {
 		fileNameIterator--;
+	}
+	if (fileNameIterator <= 0) {
+		fclose(file);
+		return FAILURE;
 	}
 	fileNameIterator--;
 	int end = fileNameIterator;
-	while (fileName[fileNameIterator] != '/') {
+	while (fileNameIterator >= 0 && fileName[fileNameIterator] != '/') {
 		fileNameIterator--;
 	}
 	int start;
@@ -316,6 +350,7 @@ int importRelation(char *fileName) {
 	relationName[relname_iter] = '\0';
 
 	if (std::strcmp(relationName, TEMP) == 0) {
+		fclose(file);
 		return E_CREATETEMP;
 	}
 
@@ -324,6 +359,7 @@ int importRelation(char *fileName) {
 	ret = createRel(relationName, numOfAttributes, attributeNames, attrTypes);
 	if (ret != SUCCESS) {
 		cout << "Import not possible as createRel failed\n";
+		fclose(file);
 		return ret;
 	}
 
@@ -331,15 +367,30 @@ int importRelation(char *fileName) {
 	int relId = OpenRelTable::openRelation(relationName);
 	if (relId == E_CACHEFULL) {
 		cout << "Import not possible as openRel failed\n";
+		fclose(file);
 		return FAILURE;
 	}
 
+	fclose(file);
+
 	// Skip first line containing attribute names
 	file = fopen(fileName, "r");
+	if (!file) {
+		OpenRelTable::closeRelation(relId);
+		ba_delete(relationName);
+		cout << "Failed to reopen " << fileName << " for reading\n";
+		return FAILURE;
+	}
 	while ((currentCharacter = fgetc(file)) != '\n')
 		continue;
 
 	char *currentLineAsCharArray = (char *) malloc(sizeof(char));
+	if (!currentLineAsCharArray) {
+		fclose(file);
+		OpenRelTable::closeRelation(relId);
+		ba_delete(relationName);
+		return FAILURE;
+	}
 	numOfCharactersInLine = 1;
 
 	int lineNumber = 2;
@@ -362,6 +413,8 @@ int importRelation(char *fileName) {
 			if (currentCharacter == ',')
 				numOfFieldsInLine++;
 			if (currentCharacter == previousCharacter && currentCharacter == ',') {
+				free(currentLineAsCharArray);
+				fclose(file);
 				OpenRelTable::closeRelation(relId);
 				ba_delete(relationName);
 				cout << "Null values are not allowed in attribute fields\n";
@@ -370,6 +423,12 @@ int importRelation(char *fileName) {
 			currentLineAsCharArray[numOfCharactersInLine - 1] = currentCharacter;
 			numOfCharactersInLine++;
 			currentLineAsCharArray = (char *) realloc(currentLineAsCharArray, (numOfCharactersInLine) * sizeof(char));
+			if (!currentLineAsCharArray) {
+				fclose(file);
+				OpenRelTable::closeRelation(relId);
+				ba_delete(relationName);
+				return FAILURE;
+			}
 			previousCharacter = currentCharacter;
 
 			currentCharacter = fgetc(file);
@@ -377,6 +436,8 @@ int importRelation(char *fileName) {
 		}
 
 		if (previousCharacter == ',') {
+			free(currentLineAsCharArray);
+			fclose(file);
 			OpenRelTable::closeRelation(relId);
 			ba_delete(relationName);
 
@@ -384,6 +445,8 @@ int importRelation(char *fileName) {
 			return FAILURE;
 		}
 		if (numOfAttributes != numOfFieldsInLine + 1) {
+			free(currentLineAsCharArray);
+			fclose(file);
 			OpenRelTable::closeRelation(relId);
 			ba_delete(relationName);
 
@@ -417,11 +480,15 @@ int importRelation(char *fileName) {
 		int retValue = constructRecordFromAttrsArray(numOfAttributes, record, attributesCharArray, attrTypes);
 
 		if (retValue == E_ATTRTYPEMISMATCH) {
+			free(currentLineAsCharArray);
+			fclose(file);
 			OpenRelTable::closeRelation(relId);
 			ba_delete(relationName);
 
 			return E_ATTRTYPEMISMATCH;
 		} else if (retValue == E_INVALID) {
+			free(currentLineAsCharArray);
+			fclose(file);
 			OpenRelTable::closeRelation(relId);
 			ba_delete(relationName);
 
@@ -432,6 +499,8 @@ int importRelation(char *fileName) {
 		int retVal = ba_insert(relId, record);
 
 		if (retVal != SUCCESS) {
+			free(currentLineAsCharArray);
+			fclose(file);
 			OpenRelTable::closeRelation(relId);
 			ba_delete(relationName);
 
@@ -443,6 +512,7 @@ int importRelation(char *fileName) {
 
 		lineNumber++;
 	}
+	free(currentLineAsCharArray);
 	OpenRelTable::closeRelation(relId);
 	fclose(file);
 	return SUCCESS;
@@ -472,10 +542,12 @@ int exportRelation(char *relname, char *filename) {
 
 	if (slotNum == SLOTMAP_SIZE_RELCAT_ATTRCAT) {
 		cout << "The relation does not exist\n";
+		fclose(fp_export);
 		return FAILURE;
 	}
 	if (firstBlock == -1) {
 		cout << "No records exist for the relation\n";
+		fclose(fp_export);
 		return FAILURE;
 	}
 
@@ -541,10 +613,10 @@ int exportRelation(char *relname, char *filename) {
 		for (slotNum = 0; slotNum < num_slots; slotNum++) {
 			if (slotmap[slotNum] == SLOT_OCCUPIED) {
 				getRecord(A, block_num, slotNum);
-				char s[ATTR_SIZE];
+				char s[64];
 				for (int l = 0; l < numOfAttrs; l++) {
 					if (attrType[l] == NUMBER) {
-						sprintf(s, "%f", A[l].nval);
+						snprintf(s, sizeof(s), "%f", A[l].nval);
 						fputs(s, fp_export);
 					}
 					if (attrType[l] == STRING) {
