@@ -613,7 +613,7 @@ int exportRelation(char *relname, char *filename) {
 		for (slotNum = 0; slotNum < num_slots; slotNum++) {
 			if (slotmap[slotNum] == SLOT_OCCUPIED) {
 				getRecord(A, block_num, slotNum);
-				char s[64];
+				char s[ATTR_SIZE];
 				for (int l = 0; l < numOfAttrs; l++) {
 					if (attrType[l] == NUMBER) {
 						snprintf(s, sizeof(s), "%f", A[l].nval);

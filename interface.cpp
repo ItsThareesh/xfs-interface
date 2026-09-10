@@ -1388,7 +1388,7 @@ int printRows(char relname[ATTR_SIZE]){
 				for (int l = 0; l < numOfAttrs; l++) {
 					if (attrType[l] == NUMBER) {
 						char s[ATTR_SIZE];
-						sprintf(s, "%-15.2f", A[l].nval);
+						snprintf(s, sizeof(s), "%-15.2f", A[l].nval);
 						printTabular(s, ATTR_SIZE - 1);
 
 					} else if (attrType[l] == STRING) {
